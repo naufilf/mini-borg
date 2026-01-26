@@ -1,0 +1,12 @@
+/bazel-*
+
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+*.o
+*.a
+*.so
+
+*.tar

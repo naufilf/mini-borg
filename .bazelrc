@@ -1,0 +1,12 @@
+# 1. Force C++17
+build --cxxopt=-std=c++17
+build --host_cxxopt=-std=c++17
+
+# 2. macOS Deployment Target (The "Nuclear" Fix)
+# We set this for both target (your code) and host (bazel tools)
+build --action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build --host_action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+
+# 4. Silence Dependency Noise
+build --features=-layering_check
+build --cxxopt=-w
