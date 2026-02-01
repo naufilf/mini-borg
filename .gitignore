@@ -10,3 +10,6 @@
 *.so
 
 *.tar
+
+.env
+.clang-format

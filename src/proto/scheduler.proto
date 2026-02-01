@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package mini_borg;
 
-// Data structures 
+// Data structures
 message Resource {
     int32 cpu_cores = 1;
     uint64 memory_mb = 2;
@@ -13,7 +13,8 @@ enum JobStatus {
     JOB_STATUS_QUEUED = 1;
     JOB_STATUS_RUNNING = 2;
     JOB_STATUS_COMPLETED = 3;
-    JOB_STATUS_FAILED = 4;    
+    JOB_STATUS_FAILED = 4;
+    JOB_STATUS_CANCELLED = 5;  // TODO: Implement logic to check if job cancelled
 }
 
 message Job {
@@ -24,7 +25,6 @@ message Job {
     string worker_id = 5;
 }
 
-
 // Request/Response wrappers
 // INPUT: user wants to run a job
 message SubmitJobRequest {
@@ -34,7 +34,7 @@ message SubmitJobRequest {
 
 // OUTPUT: master says job has been queued
 message SubmitJobResponse {
-    string job_id = 1; // return id for user to track
+    string job_id = 1;  // return id for user to track
 }
 
 message FinishJobRequest {
@@ -60,13 +60,12 @@ message HeartbeatResponse {
     repeated Job job_ids_to_kill = 3;
 }
 
-
 // Services
 service Coordinator {
     // User -> Master
-    rpc SubmitJob (SubmitJobRequest) returns (SubmitJobResponse);
+    rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
     // Worker -> Master
-    rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
     // Worker sends release resources in order to not query the db, lowering latency
-    rpc FinishJob (FinishJobRequest) returns (FinishJobResponse);
+    rpc FinishJob(FinishJobRequest) returns (FinishJobResponse);
 }
