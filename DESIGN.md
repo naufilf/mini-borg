@@ -8,7 +8,7 @@ The goal was to build a simplified distributed cluster manager capable of schedu
 
 ### 2.1 Communication Model (gRPC)
 
-We chose gRPC over REST for its strict typing (Protobuf) and performance.
+Chose gRPC over REST for its strict typing (Protobuf) and performance.
 
 - **Service Definition:** `scheduler.proto` defines the `Coordinator` service.
 - **Heartbeat Pattern:** Workers push state to Master ("I am alive") rather than Master pulling from Workers. This reduces Master complexity.
@@ -23,7 +23,7 @@ We chose gRPC over REST for its strict typing (Protobuf) and performance.
 A background thread (`CheckDeadWorkers`) runs on the Master every 5 seconds.
 
 - **Logic:** `if (Now - LastHeartbeat > 10s) -> Delete Worker`.
-- **Trade-off:** We accepted a potential 10-15s delay in detecting failures in exchange for simpler logic and reduced network chatter.
+- **Trade-off:**  Accepted a potential 10-15s delay in detecting failures in exchange for simpler logic and reduced network chatter.
 
 ### 2.4 Data Persistence
 
@@ -47,7 +47,3 @@ A background thread (`CheckDeadWorkers`) runs on the Master every 5 seconds.
 5.  **Dispatch:** Next heartbeat from that Worker carries the job payload.
 6.  **Execution:** Worker spawns thread, sleeps (simulating work), then calls `FinishJob`.
 7.  **Reclamation:** Master updates DB status and returns resources to the pool.
-
-```
-
-```

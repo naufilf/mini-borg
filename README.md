@@ -1,85 +1,65 @@
-# Mini-Borg: Distributed Job Scheduler
+Mini-Borg
 
-**Mini-Borg** is a lightweight distributed job scheduler built in C++ that mimics the core architecture of large-scale cluster management systems. It manages resource allocation, worker node health monitoring, and job execution across a distributed fleet.
+A "toy" distributed cluster scheduler built to understand how systems like Kubernetes work under the hood. It features a C++ control plane, a Java API gateway, and a fleet of worker nodes, all communicating via gRPC.
 
-## 🤖 Key Features
 
-- **Master-Worker Architecture:** Centralized coordination with distributed execution.
-- **Fault Tolerance:** "Reaper" thread detects and removes dead workers (Heartbeat mechanism).
-- **Resource Scheduling:** Assigns jobs based on available CPU/RAM constraints.
-- **Concurrency:** Multithreaded Worker nodes execute tasks without blocking heartbeats.
-- **Persistence:** Job states and history are persisted to PostgreSQL.
-- **gRPC & Protobuf:** High-performance, typed communication between nodes.
+This is a microservice architecture running entirely in Docker.
 
-## 🛠 Tech Stack
 
-- **Language:** C++17
-- **Communication:** gRPC / Protocol Buffers
-- **Build System:** Bazel
-- **Containerization:** Docker
-- **Database:** PostgreSQL (libpqxx)
-
-## 🏗 Architecture
-
-The system consists of three distinct components:
-
-1.  **The Master (Coordinator):** Holds the source of truth. It maintains a memory map of all active workers and their resources, locks critical sections for thread safety, and persists job statuses to the DB.
-2.  **The Worker (Node):** Registers itself with the Master, sends heartbeats every 3 seconds, and executes jobs in detached threads to simulate asynchronous work.
-3.  **The Client (Submitter):** CLI tool that requests resources and submits jobs to the cluster.
-
-## 📦 How to Run (Using Docker)
-
-### Prerequisites
-
-- Docker installed on your machine.
-
-### 1. Build the Cluster Image
-
-```bash
-docker build -t miniborg .
+```
+   User[User/Client] -- HTTP POST --> Gateway[Java API Gateway]
+    Gateway -- gRPC --> Master[C++ Coordinator]
+    Master -- gRPC --> Worker1[C++ Worker 1]
+    Master -- gRPC --> Worker2[C++ Worker 2]
+    Master -- SQL --> DB[(PostgreSQL)]
 ```
 
-### 2. Start the Master Server
+Here's the Stack:
 
-```bash
-docker run --rm -it \
-  --name borg_cluster \
-  -p 50051:50051 \
-  -v "$(pwd)":/app \
-  -v miniborg_cache:/root/.cache/bazel \
-  miniborg \
-  bazel run //src/master:master_server
+    Core Logic: C++17 (Master & Workers)
+
+    API Layer: Java Spring Boot
+
+    RPC Framework: gRPC + Protobuf
+
+    Build System: Bazel (for C++), Gradle (for Java)
+
+    Infrastructure: Docker Compose
+
+🚀 Quick Start
+
+You don't need to install C++, Java, or Postgres locally. Everything runs in containers.
+1. Spin up the Cluster
+```Bash
+docker-compose up --build
 ```
 
-### 3. Start a Worker Node
+2. Scale the Workers
 
-```bash
-docker exec -it borg_cluster bazel run //src/worker:worker_node -- worker-01
+Want to simulate a larger cluster? You can scale the workers dynamically:
+Bash
+```Bash
+docker-compose up -d --scale worker=3
+```
+You will see 3 distinct workers register in the Master logs.
+
+3. Submit a Job
+
+Use curl to hit the Java Gateway (exposed on port 8080):
+```Bash
+curl -X POST http://localhost:8080/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "render-video-task",
+    "cpu_cores": 2,
+    "memory_mb": 1024
+  }'
 ```
 
-### 4. Submit a Job
+Future Roadmap
 
-```bash
-docker exec -it borg_cluster bazel run //src/client:submit_job
-```
+    [ ] Implement a "Retry" queue for jobs that fail mid-execution.
 
-## 🛢 Database Schema
+    [ ] Add a React frontend to visualize cluster resource usage in real-time.
 
-In order to set up the persistence layer, make sure your PostgreSQL instance runs the following:
-
-```bash
-CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    cpu_req INT,
-    ram_req INT,
-    status INT,
-    worker_id TEXT
-);
-```
-
-## 🧩 Future Improvements
-
-- Implement "Job Cancellation" propagation to workers.
-- Add a Web UI to visualize the cluster state.
-- Support dynamic resource updates from workers.
+    [ ] Add etcd for Master leader election 

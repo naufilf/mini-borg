@@ -1,0 +1,62 @@
+services:
+  # Database Service
+  miniborg-db:
+    image: postgres:15
+    container_name: miniborg-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    # where data is saved on local drive
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck: # avoid starting master server until db online to avoid race conditions
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Master Service
+  coordinator:
+    build: 
+      context: .
+      dockerfile: Dockerfile 
+    container_name: borg-cluster
+    command: ["./bazel-bin/src/master/master_server"]
+    depends_on:
+      miniborg-db:
+        condition: service_healthy
+    ports:
+      - "50051:50051"
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=5432
+  
+  worker:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "./bazel-bin/src/worker/worker_client_bin", 
+      "--coordinator_addr=coordinator:50051", 
+      "--worker_port=50052"
+    ]
+    environment:
+      - GRPC_DNS_RESOLVER=native # use to avoid a c-ares issue
+    depends_on:
+      - coordinator
+    restart: on-failure
+    deploy:
+      replicas: 1
+
+# volume for persistent data
+volumes:
+  postgres_data:
+

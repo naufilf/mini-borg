@@ -24,16 +24,11 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # 5. Set up workspace
 WORKDIR /app
 
-# --- OPTIMIZATION START ---
-# Copy dependency definitions first. 
-# This allows Docker to cache the "fetch" step if your dependencies haven't changed.
+
 COPY .bazelversion .bazelversion
 COPY MODULE.bazel MODULE.bazel
-# COPY MODULE.bazel.lock MODULE.bazel.lock  <-- Uncomment if you have a lockfile
-# --- OPTIMIZATION END ---
 
 # 6. Copy the rest of the source code
 COPY . .
 
-# 7. Default command
-CMD ["/bin/bash"]
+RUN bazel build //src/master:master_server //src/worker:worker_client_bin

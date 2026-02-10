@@ -47,8 +47,7 @@ void RunTask(mini_borg::WorkerClient* client, std::string worker_id, mini_borg::
 }
 
 int main(int argc, char** argv) {
-    std::string target_str = "localhost:50051";
-
+    std::string target_str = GetFlag(argc, argv, "--coordinator_addr", "localhost:50051");
     // parse args for worker creation
     std::string worker_id = GetFlag(argc, argv, "--name", "worker-default");
     int total_cpu = std::atoi(GetFlag(argc, argv, "--cpu", "8").c_str());
