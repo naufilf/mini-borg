@@ -11,6 +11,7 @@
 #include <pqxx/pqxx>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "src/master/job_store.h"
@@ -47,8 +48,10 @@ namespace mini_borg {
         int GetJobStatusFromDB(const std::string& job_id);
         void UpdateJobStatus(const std::string& job_id, int status_enum);
         void CheckDeadWorkers();
+        void ReconcileState();
         int job_counter_ = 0;
         std::map<std::string, std::vector<mini_borg::Job>> pending_jobs_map_;
+        std::unordered_map<std::string, mini_borg::Resource> reserved_resources_;
         std::thread reaper_thread_;
         std::atomic<bool> running_{true};
         std::unique_ptr<JobStore> store_;

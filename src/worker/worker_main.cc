@@ -28,7 +28,24 @@ std::string GetFlag(int argc, char** argv, const std::string& flag, const std::s
 void RunTask(mini_borg::WorkerClient* client, std::string worker_id, mini_borg::Job job) {
     std::cout << "[Worker] Starting job " << job.id() << " on " << worker_id << std::endl;
     // simulating work
-    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+
+    mini_borg::Resource released_resources;
+    released_resources.set_cpu_cores(job.resource_reqs().cpu_cores());
+    released_resources.set_memory_mb(job.resource_reqs().memory_mb());
+
+    // Keep trying to tell the Master the job is done until it succeeds. Avoids jobs stored as RUNNING in DB if
+    // coordinator dies
+    bool success = false;
+    while (!success) {
+        success = client->NotifyJobFinished(job.id(), worker_id, true, released_resources);
+
+        if (!success) {
+            std::cout << "[Worker] Master unreachable. Failed to report " << job.id()
+                      << " as finished. Retrying in 3 seconds..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+        }
+    }
 
     // RELEASE RESOURCES
     {
@@ -39,11 +56,7 @@ void RunTask(mini_borg::WorkerClient* client, std::string worker_id, mini_borg::
                   << " Current Memory: " << g_current_ram << std::endl;
     }
 
-    mini_borg::Resource released_resources;
-    released_resources.set_cpu_cores(job.resource_reqs().cpu_cores());
-    released_resources.set_memory_mb(job.resource_reqs().memory_mb());
-
-    client->NotifyJobFinished(job.id(), worker_id, true, released_resources);
+    std::cout << "[Worker] Successfully reported " << job.id() << " as finished to Master." << std::endl;
 }
 
 int main(int argc, char** argv) {

@@ -63,4 +63,48 @@ namespace mini_borg {
             return -1;
         }
     }
+
+    // Make sure JOB_STATUS_QUEUED and JOB_STATUS_RUNNING jobs are picked back up on server restart
+    std::vector<mini_borg::Job> PostgresJobStore::GetJobsOfStatusFromDB(int status_enum) {
+        std::vector<mini_borg::Job> recovered_jobs;
+
+        try {
+            if (!db_conn_.is_open()) {
+                std::cerr << "[DB Error] Connection is closed." << std::endl;
+                return recovered_jobs;
+            }
+
+            std::lock_guard<std::mutex> lock(db_mutex_);
+
+            pqxx::work txn(db_conn_);  // transaction start
+            std::string sql = "SELECT id, name, cpu_req, ram_req, status, worker_id FROM jobs WHERE status = $1";
+
+            // stores all rows form query
+            pqxx::result res = txn.exec_params(sql, status_enum);
+
+            for (auto row : res) {
+                mini_borg::Job job;
+
+                job.set_id((row["id"]).c_str());
+                job.set_name((row["name"]).c_str());
+                job.set_status(static_cast<mini_borg::JobStatus>(row["status"].as<int>()));
+
+                if (!row["worker_id"].is_null()) {
+                    job.set_worker_id(row["worker_id"].c_str());
+                }
+
+                job.mutable_resource_reqs()->set_cpu_cores(row["cpu_req"].as<int>());
+                job.mutable_resource_reqs()->set_memory_mb(row["ram_req"].as<int>());
+
+                recovered_jobs.push_back(job);
+            }
+
+            txn.commit();
+
+        } catch (const std::exception& e) {
+            std::cerr << "[DB Error] " << e.what() << std::endl;
+        }
+
+        return recovered_jobs;
+    }
 }  // namespace mini_borg

@@ -16,6 +16,8 @@ cc_library(
     hdrs = ["postgres_job_store.h"],
     deps = [
         ":job_store_interface",
+        "//src/proto:scheduler_cc_grpc",
+        "@com_github_grpc_grpc//:grpc++"
     ],
     linkopts = ["-lpqxx", "-lpq"], 
     visibility = ["//visibility:public"],

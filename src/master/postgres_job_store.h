@@ -4,8 +4,10 @@
 #include <iostream>
 #include <mutex>
 #include <pqxx/pqxx>
+#include <vector>
 
 #include "src/master/job_store.h"
+#include "src/proto/scheduler.grpc.pb.h"
 
 namespace mini_borg {
 
@@ -23,6 +25,7 @@ namespace mini_borg {
                          const std::string& worker_id) override;
         int GetJobStatusFromDB(const std::string& job_id) override;
         void UpdateJobStatus(const std::string& job_id, int status_enum) override;
+        std::vector<mini_borg::Job> GetJobsOfStatusFromDB(int status_enum) override;
 
     private:
         pqxx::connection db_conn_;

@@ -10,6 +10,7 @@ namespace mini_borg {
 
     // initialize DB connection immediately
     CoordinatorServiceImpl::CoordinatorServiceImpl(std::unique_ptr<JobStore> store) : store_(std::move(store)) {
+        ReconcileState();
         running_ = true;
         // this thread now constantly runs check dead workers
         reaper_thread_ = std::thread(&CoordinatorServiceImpl::CheckDeadWorkers, this);
@@ -20,6 +21,46 @@ namespace mini_borg {
         if (reaper_thread_.joinable()) {
             reaper_thread_.join();
         }
+    }
+
+    // TODO: Implement UUIDs so job_counter doesn't cause problems on recovery
+    // TODO: Handle resource reallocation to workers
+    void CoordinatorServiceImpl::ReconcileState() {
+        std::cout << "[Master] --------------------------------------" << std::endl;
+        std::cout << "[Master] Starting State Reconciliation..." << std::endl;
+
+        // 1 represents JOB_STATUS_QUEUED
+        std::vector<mini_borg::Job> recovered_jobs = store_->GetJobsOfStatusFromDB(1);
+
+        if (recovered_jobs.empty()) {
+            std::cout << "[Master] No queued jobs found in DB. Clean slate." << std::endl;
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(map_mutex_);
+
+        for (const auto& job : recovered_jobs) {
+            std::string assigned_worker = job.worker_id();
+
+            if (!assigned_worker.empty()) {
+                pending_jobs_map_[assigned_worker].push_back(job);
+
+                // Server keeps track of reseerved resources for queued jobs
+                // No need to recalculate reserved resources for running jobs since resouce allocation handled in
+                // SubmitJob
+                reserved_resources_[assigned_worker].set_cpu_cores(reserved_resources_[assigned_worker].cpu_cores() +
+                                                                   job.resource_reqs().cpu_cores());
+                reserved_resources_[assigned_worker].set_memory_mb(reserved_resources_[assigned_worker].memory_mb() +
+                                                                   job.resource_reqs().memory_mb());
+
+                std::cout << "[Recovery] RESERVED: Job " << job.id() << " (" << job.resource_reqs().cpu_cores()
+                          << " CPU) and (" << job.resource_reqs().memory_mb() << " RAM) for " << assigned_worker
+                          << std::endl;
+            }
+        }
+
+        std::cout << "[Master] Reconciliation Complete. Waiting for workers to reconnect." << std::endl;
+        std::cout << "[Master] --------------------------------------" << std::endl;
     }
 
     void CoordinatorServiceImpl::CheckDeadWorkers() {
@@ -58,12 +99,20 @@ namespace mini_borg {
                                              mini_borg::FinishJobResponse* response) {
         // ONLY save to db if job hasnt been cancelled, this is quick solution
         int database_status = store_->GetJobStatusFromDB(request->job_id());
+
+        if (database_status == mini_borg::JOB_STATUS_COMPLETED || database_status == mini_borg::JOB_STATUS_FAILED) {
+            std::cout << "[Master] Job " << request->job_id() << " already finished. Ignoring duplicate RPC."
+                      << std::endl;
+            return Status::OK;
+        }
+
         if (database_status != mini_borg::JOB_STATUS_CANCELLED) {
             // check if job was a success
             int status = request->success() ? mini_borg::JOB_STATUS_COMPLETED : mini_borg::JOB_STATUS_FAILED;
             store_->UpdateJobStatus(request->job_id(), status);
         } else {
             std::cout << "[Master] Ignoring FinishJob for cancelled job " << request->job_id() << std::endl;
+            return Status::OK;
         }
 
         auto it = worker_map_.find(request->worker_id());
@@ -105,19 +154,22 @@ namespace mini_borg {
                 auto& worker = pair.second;
                 if (worker.cpu_cores >= request->resource_reqs().cpu_cores() &&
                     worker.ram_mb >= request->resource_reqs().memory_mb()) {
+                    mini_borg::Job new_job;
                     assigned_worker_id = worker.id;
+
+                    new_job.set_id(job_id);
+                    new_job.set_name(request->name());
+                    new_job.set_status(mini_borg::JOB_STATUS_QUEUED);
+                    // need to set JOB_STATUS_QUEUED before deducting resources so we never get into a situation during
+                    // state reconcilation where resource aren't accounted for
+                    new_job.set_worker_id(assigned_worker_id);
                     // deduct resources
                     worker.cpu_cores -= request->resource_reqs().cpu_cores();
                     worker.ram_mb -= request->resource_reqs().memory_mb();
+                    *new_job.mutable_resource_reqs() = request->resource_reqs();
+
                     std::cout << "[Master] Now, " << assigned_worker_id << " has " << worker.cpu_cores << " cores and "
                               << worker.ram_mb << " MB of memory available." << std::endl;
-
-                    mini_borg::Job new_job;
-                    new_job.set_id(job_id);
-                    new_job.set_name(request->name());
-                    new_job.set_worker_id(assigned_worker_id);
-                    new_job.set_status(mini_borg::JOB_STATUS_QUEUED);
-                    *new_job.mutable_resource_reqs() = request->resource_reqs();
 
                     pending_jobs_map_[assigned_worker_id].push_back(new_job);
 
@@ -156,10 +208,28 @@ namespace mini_borg {
             std::cout << worker_id << " is alive." << std::endl;
         } else {
             const auto& resource = request->available_resources();
+
+            // Re-adding worker after master crashes
+            int actual_cpu = resource.cpu_cores();
+            uint64_t actual_ram = resource.memory_mb();
+
+            // Check if worker resources are currently being held
+            auto res_it = reserved_resources_.find(worker_id);
+            if (res_it != reserved_resources_.end()) {
+                // The actual resource = amount of resource worker beleives it has - amount server knows is reserved for
+                // job processing
+                actual_cpu -= res_it->second.cpu_cores();
+                actual_ram -= res_it->second.memory_mb();
+
+                std::cout << "[Recovery] Recovered resources for" << worker_id << std::endl;
+
+                reserved_resources_.erase(res_it);
+            }
+
             // make new worker node (or readd zombie node)
-            worker_map_[request->worker_id()] = {request->worker_id(), resource.cpu_cores(), resource.memory_mb(),
+            worker_map_[request->worker_id()] = {request->worker_id(), actual_cpu, static_cast<int>(actual_ram),
                                                  std::chrono::steady_clock::now()};
-            std::cout << "Worker " << worker_id << " added!" << std::endl;
+            std::cout << "Worker " << worker_id << " added/recovered!" << std::endl;
         }
 
         // queue checking logic
@@ -171,6 +241,8 @@ namespace mini_borg {
 
             for (const auto& job : queue_it->second) {
                 *response->add_jobs_to_start() = job;  // repeated field in protobuf
+                // Mark as RUNNING (2) so it doesn't get re-dispatched if the Master crashes
+                store_->UpdateJobStatus(job.id(), 2);
             }
 
             queue_it->second.clear();

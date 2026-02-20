@@ -21,3 +21,12 @@ postgres_data/
 .idea/
 .vscode/
 *.swp
+
+
+.venv/
+venv/
+
+*_pb2.py
+*_pb2_grpc.py
+__pycache__/
+*.py
