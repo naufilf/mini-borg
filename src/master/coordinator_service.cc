@@ -1,5 +1,7 @@
 #include "src/master/coordinator_service.h"
 
+#include <uuid/uuid.h>
+
 #include <iostream>
 #include <pqxx/pqxx>
 
@@ -23,8 +25,6 @@ namespace mini_borg {
         }
     }
 
-    // TODO: Implement UUIDs so job_counter doesn't cause problems on recovery
-    // TODO: Handle resource reallocation to workers
     void CoordinatorServiceImpl::ReconcileState() {
         std::cout << "[Master] --------------------------------------" << std::endl;
         std::cout << "[Master] Starting State Reconciliation..." << std::endl;
@@ -134,11 +134,12 @@ namespace mini_borg {
                                              mini_borg::SubmitJobResponse* response) {
         // assign job id
         std::string job_id;
-        {
-            std::lock_guard<std::mutex> lock(counter_mutex_);
-            job_counter_++;
-            job_id = "job-" + std::to_string(job_counter_);
-        }
+        uuid_t b_uuid;
+        uuid_generate_random(b_uuid);
+        char uuid_str[37];
+        uuid_unparse_lower(b_uuid, uuid_str);
+
+        job_id = "job-" + std::string(uuid_str);
 
         std::string assigned_worker_id;
 

@@ -32,6 +32,7 @@ cc_library(
         "//src/proto:scheduler_cc_grpc",
         "@com_github_grpc_grpc//:grpc++",
     ],
+    linkopts = ["-luuid"],
     visibility = ["//visibility:public"],
 )
 
@@ -43,6 +44,7 @@ cc_binary(
         ":postgres_job_store",
         "@com_github_grpc_grpc//:grpc++",
     ],
+    linkopts = ["-luuid"],
 )
 
 cc_test(

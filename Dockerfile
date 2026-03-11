@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Added 'openjdk-11-jdk': Required by many Bazel rules (like Protobuf/gRPC) to run tools.
 RUN apt-get update && apt-get install -y \
     build-essential \
+    uuid-dev \
     libpq-dev \
     libpqxx-dev \
     curl \
