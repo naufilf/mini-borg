@@ -80,10 +80,18 @@ namespace mini_borg {
                     std::cout << "Worker: " << it->first << " | CPU: " << it->second.cpu_cores
                               << " | RAM: " << it->second.ram_mb << " | Silence: " << duration << "s" << std::endl;
 
-                    // TODO: prevent eternal RUNNING jobs in DB in the case of hardware failure
-                    // Trade efficiency for reliability
                     if (duration > 10) {  // if the worker silent for this long, its dead
                         std::cout << "[Master] Worker " << it->first << " is DEAD. Removing now..." << std::endl;
+
+                        // TODO: find a way to optimize db calls before erasure of RUNNING jobs from DB for a dead worker
+                        std::vector<mini_borg::Job> orphaned_jobs = store_->RequeueOrphanedJobs(it->first);
+                        
+                        for (const auto& job: orphaned_jobs) {
+                            unassigned_queue_.push_back(job);
+                        }
+
+                        std::cout << "[Master] Requeued jobs running on worker " << it->first << std::endl;
+
                         it = worker_map_.erase(it);
                     } else {
                         it++;
@@ -217,7 +225,7 @@ namespace mini_borg {
             // Check if worker resources are currently being held
             auto res_it = reserved_resources_.find(worker_id);
             if (res_it != reserved_resources_.end()) {
-                // The actual resource = amount of resource worker beleives it has - amount server knows is reserved for
+                // The actual resource = amount of resource worker believes it has - amount server knows is reserved for
                 // job processing
                 actual_cpu -= res_it->second.cpu_cores();
                 actual_ram -= res_it->second.memory_mb();
@@ -233,7 +241,7 @@ namespace mini_borg {
             std::cout << "Worker " << worker_id << " added/recovered!" << std::endl;
         }
 
-        // queue checking logic
+        // Logic to assign QUEUED jobs to correct worker (assigned jobs)
         auto queue_it = pending_jobs_map_.find(worker_id);
 
         if (queue_it != pending_jobs_map_.end() && !queue_it->second.empty()) {
@@ -247,6 +255,32 @@ namespace mini_borg {
             }
 
             queue_it->second.clear();
+        }
+
+        // Logic to assign QUEUED jobs to any worker (unassigned jobs)
+        auto& worker = worker_map_[worker_id];
+
+        while (!unassigned_queue_.empty()) {
+
+            mini_borg::Job front_job = unassigned_queue_.front();
+
+            int req_cpu = front_job.resource_reqs().cpu_cores();
+            int req_ram = front_job.resource_reqs().memory_mb();
+
+            if (worker.cpu_cores >= req_cpu && worker.ram_mb >= req_ram) {
+                worker.cpu_cores -= req_cpu;
+                worker.ram_mb -= req_ram;
+
+                front_job.set_worker_id(worker_id);
+                *response->add_jobs_to_start() = front_job;
+
+                store_->UpdateJobStatus(front_job.id(), 2, worker_id);
+
+                unassigned_queue_.pop_front();
+            } else {
+                break;
+            }
+
         }
 
         return Status::OK;

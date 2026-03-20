@@ -1,4 +1,4 @@
-package main.java.gateway;
+package gateway;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;

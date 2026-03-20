@@ -21,16 +21,24 @@ namespace mini_borg {
         }
     }
 
-    void PostgresJobStore::UpdateJobStatus(const std::string& job_id, int status_enum) {
+    void PostgresJobStore::UpdateJobStatus(const std::string& job_id, int status_enum, const std::string& worker_id) {
         try {
             if (!db_conn_.is_open()) return;
 
             std::lock_guard<std::mutex> lock(db_mutex_);
 
             pqxx::work txn(db_conn_);  // transaction start
-            std::string sql = "UPDATE jobs SET status = $1 WHERE id = $2";
 
-            txn.exec_params(sql, status_enum, job_id);
+            if (worker_id.empty()) {
+                // Standard update (Just status)
+                std::string sql = "UPDATE jobs SET status = $1 WHERE id = $2;";
+                txn.exec_params(sql, status_enum, job_id);
+            } else {
+                // New update (Status AND newly assigned worker)
+                std::string sql = "UPDATE jobs SET status = $1, worker_id = $2 WHERE id = $3;";
+                txn.exec_params(sql, status_enum, worker_id, job_id);
+            }
+
             txn.commit();
 
             // cast to string for logging
@@ -39,6 +47,43 @@ namespace mini_borg {
         } catch (const std::exception& e) {
             std::cerr << "[DB Error] " << e.what() << std::endl;
         }
+    }
+
+    std::vector<mini_borg::Job> PostgresJobStore::RequeueOrphanedJobs(const std::string& dead_worker_id) {
+        std::vector<mini_borg::Job> orphaned_jobs;
+
+        try {
+            if (!db_conn_.is_open()) return orphaned_jobs;
+
+            std::lock_guard<std::mutex> lock(db_mutex_);
+
+            pqxx::work txn(db_conn_);
+            std::string sql = "UPDATE jobs SET status = 1, worker_id = '' WHERE worker_id = $1 AND status = 2 RETURNING id, name, cpu_req, ram_req;";
+            
+            pqxx::result res = txn.exec_params(sql, dead_worker_id);
+
+            for (auto row : res) {
+                mini_borg::Job job;
+
+                job.set_id((row["id"]).c_str());
+                job.set_name((row["name"]).c_str());
+                job.set_status(mini_borg::JOB_STATUS_QUEUED); 
+
+                // Use the correct column names from the DB schema
+                job.mutable_resource_reqs()->set_cpu_cores(row["cpu_req"].as<int>());
+                job.mutable_resource_reqs()->set_memory_mb(row["ram_req"].as<int>());
+
+                orphaned_jobs.push_back(job);
+            }
+
+            txn.commit();
+
+            std::cout << "[DB] " << res.size() << " have had their job status updated from RUNNING to QUEUED." << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "[DB Error] " << e.what() << std::endl;
+        }
+
+        return orphaned_jobs;
     }
 
     int PostgresJobStore::GetJobStatusFromDB(const std::string& job_id) {

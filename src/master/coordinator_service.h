@@ -55,6 +55,7 @@ namespace mini_borg {
         std::thread reaper_thread_;
         std::atomic<bool> running_{true};
         std::unique_ptr<JobStore> store_;
+        std::deque<mini_borg::Job> unassigned_queue_; // use a deque for easy insertion of new job (push) and assignment to worker (pop)
         std::mutex counter_mutex_;
         std::map<std::string, WorkerNode> worker_map_;
         std::mutex map_mutex_;

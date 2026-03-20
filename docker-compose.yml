@@ -40,22 +40,35 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_PORT=5432
   
-  worker:
+  worker-1:
     build: 
       context: .
       dockerfile: Dockerfile
     command: [
       "./bazel-bin/src/worker/worker_client_bin", 
       "--coordinator_addr=coordinator:50051", 
-      "--worker_port=50052"
+      "--worker_port=50052",
+      "--name=worker-1" 
     ]
     environment:
-      - GRPC_DNS_RESOLVER=native # use to avoid a c-ares issue
+      - GRPC_DNS_RESOLVER=native
     depends_on:
       - coordinator
-    restart: on-failure
-    deploy:
-      replicas: 1
+
+  worker-2:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "./bazel-bin/src/worker/worker_client_bin", 
+      "--coordinator_addr=coordinator:50051", 
+      "--worker_port=50053",
+      "--name=worker-2" 
+    ]
+    environment:
+      - GRPC_DNS_RESOLVER=native
+    depends_on:
+      - coordinator
 
 # volume for persistent data
 volumes:

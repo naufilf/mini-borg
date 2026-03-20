@@ -1,4 +1,4 @@
-package main.java.gateway;
+package gateway;
 public class JobSubmissionDto {
     private String name;
     private int cpu_cores;

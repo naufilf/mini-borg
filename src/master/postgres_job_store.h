@@ -24,7 +24,8 @@ namespace mini_borg {
         void SaveJobToDb(const std::string& id, const std::string& name, const Resource& res,
                          const std::string& worker_id) override;
         int GetJobStatusFromDB(const std::string& job_id) override;
-        void UpdateJobStatus(const std::string& job_id, int status_enum) override;
+        std::vector<mini_borg::Job> RequeueOrphanedJobs(const std::string& dead_worker_id) override;
+        void UpdateJobStatus(const std::string& job_id, int status_enum, const std::string& worker_id) override;
         std::vector<mini_borg::Job> GetJobsOfStatusFromDB(int status_enum) override;
 
     private:
